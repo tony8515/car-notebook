@@ -1,83 +1,49 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import Records from "../records/Records";
 
-type Vehicle = { id: string; name: string };
+type VehiclesProps = {
+  // 서버에서 내려주는 값이 있어도 좋지만, 클라이언트에서는 auth.uid()를 최종 기준으로 씁니다.
+  userId?: string;
+};
 
-export default function Vehicles({ userId }: { userId: string }) {
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [name, setName] = useState("");
-  const [selectedId, setSelectedId] = useState<string>("");
+type Vehicle = {
+  id: string;
+  user_id: string;
+  name: string;
+};
 
-  async function load() {
-    const { data, error } = await supabase
-      .from("vehicles")
-      .select("id,name")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
+type RecordRow = {
+  id: string;
+  user_id: string;
+  vehicle_id: string;
+  date: string; // YYYY-MM-DD (date column)
+  category: string | null;
+  odometer: number | null;
+  cost: number;
+  vendor: string | null;
+  notes: string | null;
+  receipt_urls: string[] | null; // DB에 null 가능
+  created_at: string;
+  updated_at: string;
+};
 
-    if (!error) {
-      const list = (data ?? []) as Vehicle[];
-      setVehicles(list);
-      if (!selectedId && list[0]?.id) setSelectedId(list[0].id);
-    }
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const selected = useMemo(
-    () => vehicles.find((v) => v.id === selectedId),
-    [vehicles, selectedId]
-  );
-
-  async function addVehicle() {
-    const v = name.trim();
-    if (!v) return;
-    const { error } = await supabase.from("vehicles").insert({ user_id: userId, name: v });
-    if (!error) {
-      setName("");
-      await load();
-    }
-  }
-
-  return (
-    <section style={{ marginTop: 16 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 700 }}>차량</h2>
-
-      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-        <input
-          placeholder="예: Sienna 2014"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <button onClick={addVehicle}>추가</button>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-        {vehicles.map((v) => (
-          <button
-            key={v.id}
-            onClick={() => setSelectedId(v.id)}
-            style={{
-              padding: "8px 10px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: v.id === selectedId ? "#f2f2f2" : "white",
-            }}
-          >
-            {v.name}
-          </button>
-        ))}
-      </div>
-
-      {selectedId && selected && (
-        <Records userId={userId} vehicleId={selectedId} vehicleName={selected.name} />
-      )}
-    </section>
-  );
+function ymdLocal(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
+
+function monthRangeLocal(d: Date) {
+  const start = new Date(d.getFullYear(), d.getMonth(), 1);
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return { start: ymdLocal(start), end: ymdLocal(end) };
+}
+
+export default function Vehicles({ userId: userIdProp }: VehiclesProps) {
+  const [effectiveUserId, setEffectiveUserId] = useState<string>("");
+
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
