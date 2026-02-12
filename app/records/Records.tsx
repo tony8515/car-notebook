@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type RecordRow = {
@@ -12,6 +12,7 @@ type RecordRow = {
   vendor: string | null;
   notes: string | null;
   receipt_urls: string[];
+  inserted_at?: string; // 시간순 정렬용(있으면 사용)
 };
 
 const categories = [
@@ -24,11 +25,52 @@ const categories = [
   { v: "other", label: "기타" },
 ];
 
+const catLabel = (v: string) => categories.find((c) => c.v === v)?.label ?? v;
+
 function todayISO() {
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+// ✅ "0117428" 같은 앞 0 제거(빈칸/0/정상 입력 모두 처리)
+function normalizeIntInput(s: string) {
+  const digits = s.replace(/[^\d]/g, "");
+  if (digits === "") return "";
+  // 모두 0이면 "0"
+  if (/^0+$/.test(digits)) return "0";
+  // 앞쪽 0 제거
+  return digits.replace(/^0+/, "");
+}
+
+// ✅ 금액: 숫자와 점(.)만 허용, 소수점 한 번만, 앞 0는 "0." 케이스만 유지
+function normalizeMoneyInput(s: string) {
+  let v = s.replace(/[^\d.]/g, "");
+  if (v === "") return "";
+
+  // 점이 여러 개면 첫 번째만 남김
+  const parts = v.split(".");
+  if (parts.length > 2) v = `${parts[0]}.${parts.slice(1).join("")}`;
+
+  // 정수부 앞 0 처리
+  const [intPartRaw, decPartRaw] = v.split(".");
+  let intPart = intPartRaw ?? "";
+  let decPart = decPartRaw ?? "";
+
+  intPart = intPart.replace(/[^\d]/g, "");
+
+  if (intPart === "") intPart = "0"; // ".25" 입력하면 "0.25"로
+  if (/^0+$/.test(intPart)) intPart = "0";
+  else intPart = intPart.replace(/^0+/, ""); // "023" -> "23"
+
+  // 소수부는 숫자만, 길이는 최대 2자리로
+  decPart = decPart.replace(/[^\d]/g, "").slice(0, 2);
+
+  // 사용자가 점을 찍었는지 여부
+  const hasDot = v.includes(".");
+
+  return hasDot ? `${intPart}.${decPart}` : intPart;
 }
 
 export default function Records({
@@ -43,20 +85,28 @@ export default function Records({
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [date, setDate] = useState(todayISO());
   const [category, setCategory] = useState("fuel");
-  const [odometer, setOdometer] = useState<number>(0);
-  const [cost, setCost] = useState<number>(0);
+
+  // ✅ 초기값을 "0"이 아닌 빈칸으로 (0이 남아붙는 문제 해결)
+  const [odometer, setOdometer] = useState<string>("");
+  const [cost, setCost] = useState<string>("");
+
   const [vendor, setVendor] = useState("");
   const [notes, setNotes] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
+
   const [msg, setMsg] = useState("");
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false); // 중복 클릭 방지
+  const [fileKey, setFileKey] = useState(0);
 
   async function load() {
     const { data, error } = await supabase
       .from("records")
-      .select("id,date,category,odometer,cost,vendor,notes,receipt_urls")
+      .select("id,date,category,odometer,cost,vendor,notes,receipt_urls,inserted_at")
       .eq("user_id", userId)
       .eq("vehicle_id", vehicleId)
       .order("date", { ascending: false })
+      .order("inserted_at", { ascending: false }) // 같은 날짜는 저장시간으로
       .limit(200);
 
     if (!error) setRows((data as any) ?? []);
@@ -90,15 +140,21 @@ export default function Records({
       });
       if (error) throw error;
 
-      // 비공개 버킷: path만 저장해두고, 화면에서 signed URL로 보여줍니다.
       uploaded.push(path);
     }
     return uploaded;
   }
 
   async function addRecord() {
+    if (savingRef.current) return;
+    savingRef.current = true;
+
+    setSaving(true);
+    setMsg("저장 중...");
+
     try {
-      setMsg("");
+      const odoNum = Number(odometer || 0);
+      const costNum = Number(cost || 0);
 
       const { data, error } = await supabase
         .from("records")
@@ -107,18 +163,18 @@ export default function Records({
           vehicle_id: vehicleId,
           date,
           category,
-          odometer,
-          cost,
-          vendor: vendor || null,
-          notes: notes || null,
+          odometer: odoNum,
+          cost: costNum,
+          vendor: vendor.trim() ? vendor.trim() : null,
+          notes: notes.trim() ? notes.trim() : null,
           receipt_urls: [],
         })
         .select("id")
         .single();
 
       if (error) throw error;
-      const recordId = data.id as string;
 
+      const recordId = data.id as string;
       const receiptPaths = await uploadReceipts(recordId);
 
       if (receiptPaths.length > 0) {
@@ -131,11 +187,23 @@ export default function Records({
         if (upErr) throw upErr;
       }
 
+      // ✅ 저장 후 폼 완전 초기화(빈칸)
+      setCategory("fuel");
+      setOdometer("");
+      setCost("");
+      setVendor("");
+      setNotes("");
       setFiles(null);
-      setMsg("저장했습니다.");
+      setFileKey((k) => k + 1);
+
       await load();
+      setMsg("저장했습니다.");
+      setTimeout(() => setMsg(""), 2000);
     } catch (e: any) {
-      setMsg(e.message || "오류가 발생했습니다.");
+      setMsg(e?.message || "오류가 발생했습니다.");
+    } finally {
+      setSaving(false);
+      savingRef.current = false;
     }
   }
 
@@ -172,19 +240,22 @@ export default function Records({
           <label>
             주행거리(마일){" "}
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              placeholder="예: 117428"
               value={odometer}
-              onChange={(e) => setOdometer(Number(e.target.value))}
+              onChange={(e) => setOdometer(normalizeIntInput(e.target.value))}
             />
           </label>
 
           <label>
             금액($){" "}
             <input
-              type="number"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
+              placeholder="예: 23.45"
               value={cost}
-              onChange={(e) => setCost(Number(e.target.value))}
+              onChange={(e) => setCost(normalizeMoneyInput(e.target.value))}
             />
           </label>
 
@@ -199,16 +270,28 @@ export default function Records({
           <label>
             영수증 사진(여러 장){" "}
             <input
+              key={fileKey}
               type="file"
               accept="image/*"
               multiple
               capture="environment"
               onChange={(e) => setFiles(e.target.files)}
+              disabled={saving}
             />
           </label>
 
-          <button onClick={addRecord} style={{ padding: "10px 12px", borderRadius: 12 }}>
-            저장
+          <button
+            type="button"
+            onClick={addRecord}
+            disabled={saving}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              opacity: saving ? 0.6 : 1,
+              cursor: saving ? "not-allowed" : "pointer",
+            }}
+          >
+            {saving ? "저장 중..." : "저장"}
           </button>
 
           {msg && <div style={{ opacity: 0.85 }}>{msg}</div>}
@@ -221,11 +304,12 @@ export default function Records({
           {rows.map((r) => (
             <div key={r.id} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
               <div style={{ fontWeight: 700 }}>
-                {r.date} · {r.category} · {Number(r.odometer).toLocaleString()} mi
+                {r.date} · {catLabel(r.category)} · {Number(r.odometer).toLocaleString()} mi
               </div>
               <div style={{ opacity: 0.8 }}>
                 ${Number(r.cost).toFixed(2)} {r.vendor ? `· ${r.vendor}` : ""}
               </div>
+
               {r.notes && <div style={{ marginTop: 6 }}>{r.notes}</div>}
 
               {r.receipt_urls?.length > 0 && (
@@ -260,9 +344,8 @@ function ReceiptThumb({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
-  if (!url) {
+  if (!url)
     return <div style={{ width: 90, height: 90, border: "1px solid #eee", borderRadius: 10 }} />;
-  }
 
   return (
     <a href={url} target="_blank" rel="noreferrer">
