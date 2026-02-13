@@ -12,7 +12,7 @@ type RecordRow = {
   vendor: string | null;
   notes: string | null;
   receipt_urls: string[];
-  created_at?: string; // ✅ 시간순 정렬용(테이블에 있으면 사용)
+  created_at?: string; // 있을 수도/없을 수도
 };
 
 const categories = [
@@ -85,27 +85,73 @@ export default function Records({
   const savingRef = useRef(false);
   const [fileKey, setFileKey] = useState(0);
 
-  async function load() {
-    // ✅ inserted_at 대신 created_at 사용
-    const { data, error } = await supabase
+  // ✅ created_at 컬럼이 실제로 존재하는지 “한 번만” 확인해두는 플래그
+  const hasCreatedAtRef = useRef<boolean | null>(null);
+
+  async function detectCreatedAtColumn(): Promise<boolean> {
+    // 이미 체크했으면 재사용
+    if (hasCreatedAtRef.current !== null) return hasCreatedAtRef.current;
+
+    // created_at 포함해서 아주 작은 쿼리 1번 날려보고,
+    // "column does not exist"면 created_at 없는 걸로 판단
+    const probe = await supabase
       .from("records")
-      .select("id,date,category,odometer,cost,vendor,notes,receipt_urls,created_at")
+      .select("id,created_at")
       .eq("user_id", userId)
       .eq("vehicle_id", vehicleId)
-      .order("date", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(200);
+      .limit(1);
 
-    // ✅ 이제 에러를 화면에 보여줌 (원인 즉시 확인)
+    if (probe.error) {
+      const msg = (probe.error.message || "").toLowerCase();
+      if (msg.includes("created_at") && (msg.includes("does not exist") || msg.includes("column"))) {
+        hasCreatedAtRef.current = false;
+        return false;
+      }
+      // 다른 에러(권한/네트워크 등)는 일단 created_at 있다고 가정하지 말고 false로 둠
+      hasCreatedAtRef.current = false;
+      return false;
+    }
+
+    hasCreatedAtRef.current = true;
+    return true;
+  }
+
+  async function load() {
+    console.log("[LOAD] userId:", userId, "vehicleId:", vehicleId);
+
+    const hasCreatedAt = await detectCreatedAtColumn();
+
+    let q = supabase
+      .from("records")
+      .select(hasCreatedAt
+        ? "id,date,category,odometer,cost,vendor,notes,receipt_urls,created_at"
+        : "id,date,category,odometer,cost,vendor,notes,receipt_urls"
+      )
+      .eq("user_id", userId)
+      .eq("vehicle_id", vehicleId)
+      .order("date", { ascending: false });
+
+    // ✅ created_at이 실제로 있을 때만 추가 정렬
+    if (hasCreatedAt) {
+      q = q.order("created_at", { ascending: false });
+    }
+
+    const { data, error } = await q.limit(200);
+
     if (error) {
+      console.log("[LOAD][ERROR]", error);
       setRows([]);
       setMsg("불러오기 오류: " + error.message);
       return;
     }
+
+    console.log("[LOAD] rows:", (data as any)?.length ?? 0);
     setRows((data as any) ?? []);
   }
 
   useEffect(() => {
+    // vehicleId 바뀌면 created_at 유무 다시 체크(테이블은 같지만 안전하게)
+    hasCreatedAtRef.current = null;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vehicleId]);
@@ -145,7 +191,17 @@ export default function Records({
     setSaving(true);
     setMsg("저장 중...");
 
+    console.log("[INSERT] userId:", userId, "vehicleId:", vehicleId, "date:", date, "cat:", category);
+
     try {
+      // ✅ 공란 저장 방지
+      if (!odometer.trim() || !cost.trim()) {
+        setMsg("주행거리와 금액을 입력하세요.");
+        setSaving(false);
+        savingRef.current = false;
+        return;
+      }
+
       const odoNum = Number(odometer || 0);
       const costNum = Number(cost || 0);
 
@@ -167,6 +223,8 @@ export default function Records({
 
       if (error) throw error;
       const recordId = data.id as string;
+
+      console.log("[INSERT] recordId:", recordId, "odometer:", odoNum, "cost:", costNum);
 
       const receiptPaths = await uploadReceipts(recordId);
 
@@ -193,6 +251,7 @@ export default function Records({
       setMsg("저장했습니다.");
       setTimeout(() => setMsg(""), 2000);
     } catch (e: any) {
+      console.log("[INSERT][ERROR]", e);
       setMsg(e?.message || "오류가 발생했습니다.");
     } finally {
       setSaving(false);
@@ -238,6 +297,7 @@ export default function Records({
               placeholder="예: 117428"
               value={odometer}
               onChange={(e) => setOdometer(normalizeIntInput(e.target.value))}
+              disabled={saving}
             />
           </label>
 
@@ -249,15 +309,16 @@ export default function Records({
               placeholder="예: 23.45"
               value={cost}
               onChange={(e) => setCost(normalizeMoneyInput(e.target.value))}
+              disabled={saving}
             />
           </label>
 
           <label>
-            장소(주유소/정비소) <input value={vendor} onChange={(e) => setVendor(e.target.value)} />
+            장소(주유소/정비소) <input value={vendor} onChange={(e) => setVendor(e.target.value)} disabled={saving} />
           </label>
 
           <label>
-            메모 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+            메모 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} disabled={saving} />
           </label>
 
           <label>
@@ -336,7 +397,9 @@ function ReceiptThumb({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
-  if (!url) return <div style={{ width: 90, height: 90, border: "1px solid #eee", borderRadius: 10 }} />;
+  if (!url) {
+    return <div style={{ width: 90, height: 90, border: "1px solid #eee", borderRadius: 10 }} />;
+  }
 
   return (
     <a href={url} target="_blank" rel="noreferrer">
