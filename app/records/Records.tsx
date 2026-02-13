@@ -12,7 +12,7 @@ type RecordRow = {
   vendor: string | null;
   notes: string | null;
   receipt_urls: string[];
-  inserted_at?: string; // 시간순 정렬용(있으면 사용)
+  created_at?: string; // ✅ 시간순 정렬용(테이블에 있으면 사용)
 };
 
 const categories = [
@@ -34,42 +34,31 @@ function todayISO() {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
-// ✅ "0117428" 같은 앞 0 제거(빈칸/0/정상 입력 모두 처리)
+// 앞 0 제거(주행거리)
 function normalizeIntInput(s: string) {
   const digits = s.replace(/[^\d]/g, "");
   if (digits === "") return "";
-  // 모두 0이면 "0"
   if (/^0+$/.test(digits)) return "0";
-  // 앞쪽 0 제거
   return digits.replace(/^0+/, "");
 }
 
-// ✅ 금액: 숫자와 점(.)만 허용, 소수점 한 번만, 앞 0는 "0." 케이스만 유지
+// 금액 입력 정리
 function normalizeMoneyInput(s: string) {
   let v = s.replace(/[^\d.]/g, "");
   if (v === "") return "";
 
-  // 점이 여러 개면 첫 번째만 남김
   const parts = v.split(".");
   if (parts.length > 2) v = `${parts[0]}.${parts.slice(1).join("")}`;
 
-  // 정수부 앞 0 처리
   const [intPartRaw, decPartRaw] = v.split(".");
-  let intPart = intPartRaw ?? "";
-  let decPart = decPartRaw ?? "";
+  let intPart = (intPartRaw ?? "").replace(/[^\d]/g, "");
+  let decPart = (decPartRaw ?? "").replace(/[^\d]/g, "").slice(0, 2);
 
-  intPart = intPart.replace(/[^\d]/g, "");
-
-  if (intPart === "") intPart = "0"; // ".25" 입력하면 "0.25"로
+  if (intPart === "") intPart = "0";
   if (/^0+$/.test(intPart)) intPart = "0";
-  else intPart = intPart.replace(/^0+/, ""); // "023" -> "23"
+  else intPart = intPart.replace(/^0+/, "");
 
-  // 소수부는 숫자만, 길이는 최대 2자리로
-  decPart = decPart.replace(/[^\d]/g, "").slice(0, 2);
-
-  // 사용자가 점을 찍었는지 여부
   const hasDot = v.includes(".");
-
   return hasDot ? `${intPart}.${decPart}` : intPart;
 }
 
@@ -85,31 +74,35 @@ export default function Records({
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [date, setDate] = useState(todayISO());
   const [category, setCategory] = useState("fuel");
-
-  // ✅ 초기값을 "0"이 아닌 빈칸으로 (0이 남아붙는 문제 해결)
   const [odometer, setOdometer] = useState<string>("");
   const [cost, setCost] = useState<string>("");
-
   const [vendor, setVendor] = useState("");
   const [notes, setNotes] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
 
   const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false); // 중복 클릭 방지
+  const savingRef = useRef(false);
   const [fileKey, setFileKey] = useState(0);
 
   async function load() {
+    // ✅ inserted_at 대신 created_at 사용
     const { data, error } = await supabase
       .from("records")
-      .select("id,date,category,odometer,cost,vendor,notes,receipt_urls,inserted_at")
+      .select("id,date,category,odometer,cost,vendor,notes,receipt_urls,created_at")
       .eq("user_id", userId)
       .eq("vehicle_id", vehicleId)
       .order("date", { ascending: false })
-      .order("inserted_at", { ascending: false }) // 같은 날짜는 저장시간으로
+      .order("created_at", { ascending: false })
       .limit(200);
 
-    if (!error) setRows((data as any) ?? []);
+    // ✅ 이제 에러를 화면에 보여줌 (원인 즉시 확인)
+    if (error) {
+      setRows([]);
+      setMsg("불러오기 오류: " + error.message);
+      return;
+    }
+    setRows((data as any) ?? []);
   }
 
   useEffect(() => {
@@ -173,8 +166,8 @@ export default function Records({
         .single();
 
       if (error) throw error;
-
       const recordId = data.id as string;
+
       const receiptPaths = await uploadReceipts(recordId);
 
       if (receiptPaths.length > 0) {
@@ -187,7 +180,7 @@ export default function Records({
         if (upErr) throw upErr;
       }
 
-      // ✅ 저장 후 폼 완전 초기화(빈칸)
+      // 폼 초기화
       setCategory("fuel");
       setOdometer("");
       setCost("");
@@ -309,7 +302,6 @@ export default function Records({
               <div style={{ opacity: 0.8 }}>
                 ${Number(r.cost).toFixed(2)} {r.vendor ? `· ${r.vendor}` : ""}
               </div>
-
               {r.notes && <div style={{ marginTop: 6 }}>{r.notes}</div>}
 
               {r.receipt_urls?.length > 0 && (
@@ -344,8 +336,7 @@ function ReceiptThumb({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
-  if (!url)
-    return <div style={{ width: 90, height: 90, border: "1px solid #eee", borderRadius: 10 }} />;
+  if (!url) return <div style={{ width: 90, height: 90, border: "1px solid #eee", borderRadius: 10 }} />;
 
   return (
     <a href={url} target="_blank" rel="noreferrer">
