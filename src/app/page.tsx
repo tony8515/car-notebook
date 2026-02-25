@@ -1,78 +1,61 @@
-// TEST-OK-123
-
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import Vehicles from "./vehicles/Vehicles";
+import { supabase } from "@/lib/supabase";
 
-export default function Home() {
-  const [session, setSession] = useState<any>(null);
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [msg, setMsg] = useState<string>("");
+export default function Page() {
+  const [userId, setUserId] = useState<string>("");
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
-  }, []);
+useEffect(() => {
+  let alive = true;
 
-  async function signIn() {
-    setMsg("");
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
-    if (error) setMsg(error.message);
-  }
+  // 1) 처음 로딩 시: 현재 세션을 즉시 읽어서 userId 세팅
+  (async () => {
+    const { data, error } = await supabase.auth.getSession();
+    if (!alive) return;
 
-  async function signUp() {
-    setMsg("");
-    const { error } = await supabase.auth.signUp({ email, password: pw });
-    if (error) setMsg(error.message);
-    else setMsg("?? ??. ?? ??????.");
-  }
+    const id = data.session?.user?.id ?? "";
+    setUserId(id);
+    setLoading(false);
+  })();
 
-  async function signOut() {
-    await supabase.auth.signOut();
-  }
+  // 2) 이후 로그인/로그아웃/토큰갱신 등 변화 감지
+  const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (!alive) return;
+    setUserId(session?.user?.id ?? "");
+    setLoading(false);
+  });
 
-  if (session) {
+  // cleanup
+  return () => {
+    alive = false;
+    authListener.subscription.unsubscribe();
+  };
+}, []);
+
+  if (loading) {
     return (
-      <main style={{ padding: 16, maxWidth: 720, margin: "0 auto" }}>
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700 }}>????</h1>
-          <button onClick={signOut}>????</button>
-        </header>
-        <Vehicles userId={session.user.id} />
+      <main style={{ maxWidth: 520, margin: "0 auto", padding: 16 }}>
+                로딩중...
       </main>
     );
   }
-<div style={{fontSize:24, fontWeight:800}}>TEST-OK-XYZ</div>
+
+  if (!userId) {
+    return (
+      <main style={{ maxWidth: 520, margin: "0 auto", padding: 16 }}>
+                로그인 후 사용하세요.
+      </main>
+    );
+  }
+
   return (
-    <main style={{ padding: 16, maxWidth: 420, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700 }}>????</h1>
-      <p style={{ opacity: 0.7 }}>??   ??   ??? ??</p>
-
-      <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-        <input
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-
-        <input
-          placeholder="Password"
-          type="password"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-        />
-
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={signIn}>???</button>
-          <button onClick={signUp}>??</button>
-        </div>
-
-        {msg && <div style={{ color: "crimson" }}>{msg}</div>}
-      </div>
+    <>  
+    <main style={{ maxWidth: 520, margin: "0 auto", padding: 16 }}>
+            <Vehicles userId={userId} />
     </main>
+    </>
   );
 }
