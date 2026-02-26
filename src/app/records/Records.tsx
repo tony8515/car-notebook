@@ -42,10 +42,11 @@ const CATEGORY_LABEL: Record<string, string> = Object.fromEntries(
   CATEGORIES.map((c) => [c.key, c.label])
 );
 
-CATEGORY_LABEL["etc"] = "기타"; // 과거 데이터 호환
-CATEGORY_LABEL["sports"] = "운동"; // 과거 데이터 호환(원하시면 삭제)
+// 과거 데이터 호환(원치 않으면 삭제 가능)
+CATEGORY_LABEL["etc"] = "기타";
+CATEGORY_LABEL["sports"] = "운동";
 
-const BUCKET = "receipts"; // Supabase Storage bucket 이름
+const BUCKET = "receipts"; // ✅ 반드시 소문자 receipts
 
 export default function Records({ userId }: { userId: string }) {
   const [records, setRecords] = useState<RecordRow[]>([]);
@@ -70,6 +71,7 @@ export default function Records({ userId }: { userId: string }) {
   const [eNotes, setENotes] = useState("");
   const [eFiles, setEFiles] = useState<FileList | null>(null);
   const [eReceiptUrls, setEReceiptUrls] = useState<string[]>([]);
+  const [eReceiptUrlsOriginal, setEReceiptUrlsOriginal] = useState<string[]>([]);
 
   const [error, setError] = useState<string>("");
 
@@ -93,7 +95,8 @@ export default function Records({ userId }: { userId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  // ----------- 업로드 유틸 -----------
+  // ---------------- Storage helpers ----------------
+
   async function uploadReceipts(recordId: string, files: FileList) {
     const uploadedUrls: string[] = [];
 
@@ -103,7 +106,7 @@ export default function Records({ userId }: { userId: string }) {
       const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
       const filename = `${crypto.randomUUID()}.${safeExt}`;
 
-      // userId/recordId/filename 형태로 저장
+      // userId/recordId/filename 형태
       const path = `${userId}/${recordId}/${filename}`;
 
       const { error: upErr } = await supabase.storage
@@ -112,13 +115,55 @@ export default function Records({ userId }: { userId: string }) {
 
       if (upErr) throw new Error(upErr.message);
 
-      // bucket을 Public으로 했다는 전제(가장 간단)
+      // bucket이 Public일 때 (현재 방식)
       const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
       if (data?.publicUrl) uploadedUrls.push(data.publicUrl);
     }
 
     return uploadedUrls;
   }
+
+  function extractStoragePathFromPublicUrl(url: string) {
+    // public url:
+    // https://xxxx.supabase.co/storage/v1/object/public/receipts/userId/recordId/file.jpg
+    // signed url:
+    // https://xxxx.supabase.co/storage/v1/object/sign/receipts/userId/recordId/file.jpg?token=...
+    try {
+      const u = new URL(url);
+      const p = u.pathname;
+
+      const marker1 = "/storage/v1/object/public/";
+      const marker2 = "/storage/v1/object/sign/";
+      let idx = p.indexOf(marker1);
+      let marker = marker1;
+      if (idx === -1) {
+        idx = p.indexOf(marker2);
+        marker = marker2;
+      }
+      if (idx === -1) return null;
+
+      const after = p.slice(idx + marker.length); // receipts/userId/recordId/file.jpg
+      const prefix = `${BUCKET}/`;
+      if (!after.startsWith(prefix)) return null;
+
+      return after.slice(prefix.length); // userId/recordId/file.jpg  ✅ remove()에 넣을 path
+    } catch {
+      return null;
+    }
+  }
+
+  async function removeReceiptFilesByUrls(urls: string[]) {
+    const paths = urls
+      .map(extractStoragePathFromPublicUrl)
+      .filter((x): x is string => !!x);
+
+    if (paths.length === 0) return;
+
+    const { error } = await supabase.storage.from(BUCKET).remove(paths);
+    if (error) throw new Error(error.message);
+  }
+
+  // ---------------- UI helpers ----------------
 
   function resetNewForm() {
     setCost("");
@@ -128,7 +173,8 @@ export default function Records({ userId }: { userId: string }) {
     setNewFiles(null);
   }
 
-  // ----------- 새 기록 저장 -----------
+  // ---------------- Create ----------------
+
   async function handleSave() {
     setError("");
 
@@ -157,7 +203,7 @@ export default function Records({ userId }: { userId: string }) {
       odoNum = n;
     }
 
-    // 1) 먼저 레코드 생성해서 id 얻기
+    // 1) 레코드 생성
     const { data: inserted, error: insErr } = await supabase
       .from("records")
       .insert({
@@ -178,7 +224,7 @@ export default function Records({ userId }: { userId: string }) {
       return;
     }
 
-    // 2) 파일 있으면 업로드 후 receipt_urls 업데이트
+    // 2) 파일 업로드 후 receipt_urls 업데이트
     try {
       if (newFiles && newFiles.length > 0) {
         const urls = await uploadReceipts(inserted.id, newFiles);
@@ -194,14 +240,15 @@ export default function Records({ userId }: { userId: string }) {
       }
     } catch (e: any) {
       setError(`사진 업로드 오류: ${e?.message ?? e}`);
-      // 레코드는 저장되었으니, 화면만 갱신
+      // 레코드는 저장되었으니 화면만 갱신
     }
 
     resetNewForm();
     loadRecords();
   }
 
-  // ----------- 수정 시작 -----------
+  // ---------------- Edit ----------------
+
   function startEdit(r: RecordRow) {
     setError("");
     setEditingId(r.id);
@@ -212,6 +259,7 @@ export default function Records({ userId }: { userId: string }) {
     setEVendor(r.vendor ?? "");
     setENotes(r.notes ?? "");
     setEReceiptUrls(r.receipt_urls ?? []);
+    setEReceiptUrlsOriginal(r.receipt_urls ?? []);
     setEFiles(null);
   }
 
@@ -219,9 +267,13 @@ export default function Records({ userId }: { userId: string }) {
     setEditingId(null);
     setEFiles(null);
     setEReceiptUrls([]);
+    setEReceiptUrlsOriginal([]);
   }
 
-  // ----------- 수정 저장 -----------
+  function removeReceiptAt(idx: number) {
+    setEReceiptUrls((prev) => prev.filter((_, i) => i !== idx));
+  }
+
   async function saveEdit() {
     if (!editingId) return;
     setError("");
@@ -251,7 +303,7 @@ export default function Records({ userId }: { userId: string }) {
       odoNum = n;
     }
 
-    // 1) 먼저 기본 필드 업데이트
+    // 1) 기본 필드 업데이트(현재 eReceiptUrls는 "제거" 반영된 상태)
     const { error: upErr1 } = await supabase
       .from("records")
       .update({
@@ -261,7 +313,7 @@ export default function Records({ userId }: { userId: string }) {
         cost: costNum,
         vendor: eVendor.trim() ? eVendor.trim() : null,
         notes: eNotes.trim() ? eNotes.trim() : null,
-        receipt_urls: eReceiptUrls, // 현재 상태(삭제 반영)
+        receipt_urls: eReceiptUrls,
       })
       .eq("id", editingId)
       .eq("user_id", userId);
@@ -271,46 +323,68 @@ export default function Records({ userId }: { userId: string }) {
       return;
     }
 
-    // 2) 새 파일이 있으면 업로드 후 receipt_urls에 추가
+    // 2) 새 파일 업로드 → receipt_urls에 추가
+    let finalUrls = [...eReceiptUrls];
+
     try {
       if (eFiles && eFiles.length > 0) {
         const newUrls = await uploadReceipts(editingId, eFiles);
         if (newUrls.length > 0) {
-          const merged = [...eReceiptUrls, ...newUrls];
+          finalUrls = [...finalUrls, ...newUrls];
           const { error: upErr2 } = await supabase
             .from("records")
-            .update({ receipt_urls: merged })
+            .update({ receipt_urls: finalUrls })
             .eq("id", editingId)
             .eq("user_id", userId);
 
           if (upErr2) throw new Error(upErr2.message);
 
-          setEReceiptUrls(merged);
+          setEReceiptUrls(finalUrls);
         }
       }
     } catch (e: any) {
       setError(`사진 업로드 오류: ${e?.message ?? e}`);
+      // 업로드 실패해도 수정 자체는 되었으니 계속 진행
+    }
+
+    // 3) ✅ 제거된 파일들 Storage에서도 삭제 (DB 업데이트는 이미 성공)
+    try {
+      const removed = eReceiptUrlsOriginal.filter((u) => !finalUrls.includes(u));
+      if (removed.length > 0) {
+        await removeReceiptFilesByUrls(removed);
+      }
+    } catch (e: any) {
+      setError(`영수증 파일 삭제 오류: ${e?.message ?? e}`);
+      // 파일 삭제 실패해도 수정은 유지
     }
 
     setEditingId(null);
+    setEFiles(null);
+    setEReceiptUrlsOriginal([]);
     loadRecords();
   }
 
-  // ----------- 영수증 URL 하나 제거(수정 모드에서만) -----------
-  function removeReceiptAt(idx: number) {
-    setEReceiptUrls((prev) => prev.filter((_, i) => i !== idx));
-  }
+  // ---------------- Delete ----------------
 
-  // ----------- 삭제 -----------
   async function deleteRecord(r: RecordRow) {
-    const ok = confirm(`${r.date} · ${CATEGORY_LABEL[r.category] ?? r.category} 기록을 삭제할까요?`);
+    const ok = confirm(
+      `${r.date} · ${CATEGORY_LABEL[r.category] ?? r.category} 기록을 삭제할까요?`
+    );
     if (!ok) return;
 
     setError("");
 
-    // (선택) storage 파일도 지우고 싶으면 여기서 r.receipt_urls를 파싱해서 remove 가능
-    // 지금은 레코드 삭제만(간단/안전)
+    // ✅ 1) 사진 먼저 삭제(실패하면 레코드 삭제 중단: 안전)
+    try {
+      if (r.receipt_urls && r.receipt_urls.length > 0) {
+        await removeReceiptFilesByUrls(r.receipt_urls);
+      }
+    } catch (e: any) {
+      setError(`영수증 파일 삭제 오류: ${e?.message ?? e}`);
+      return;
+    }
 
+    // ✅ 2) 레코드 삭제
     const { error: delErr } = await supabase
       .from("records")
       .delete()
@@ -326,6 +400,8 @@ export default function Records({ userId }: { userId: string }) {
     loadRecords();
   }
 
+  // ---------------- Derived ----------------
+
   const filtered = useMemo(() => {
     return records.filter((r) => r.date.startsWith(selectedMonth));
   }, [records, selectedMonth]);
@@ -333,6 +409,8 @@ export default function Records({ userId }: { userId: string }) {
   const monthTotal = useMemo(() => {
     return filtered.reduce((sum, r) => sum + (Number(r.cost) || 0), 0).toFixed(2);
   }, [filtered]);
+
+  // ---------------- Render ----------------
 
   return (
     <div className="p-4 max-w-xl mx-auto space-y-4">
@@ -412,7 +490,6 @@ export default function Records({ userId }: { userId: string }) {
           className="w-full border p-2 rounded"
         />
 
-        {/* 📷 영수증 사진: 모바일 카메라/갤러리 */}
         <div className="space-y-1">
           <div className="text-sm">영수증 사진</div>
           <input
@@ -462,13 +539,7 @@ export default function Records({ userId }: { userId: string }) {
                     <div className="text-sm">
                       영수증: {r.receipt_urls.length}장{" "}
                       {r.receipt_urls.slice(0, 3).map((u, idx) => (
-                        <a
-                          key={idx}
-                          href={u}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="underline ml-2"
-                        >
+                        <a key={idx} href={u} target="_blank" rel="noreferrer" className="underline ml-2">
                           보기{idx + 1}
                         </a>
                       ))}
