@@ -116,8 +116,10 @@ export default function Records({ userId }: { userId: string }) {
       if (upErr) throw new Error(upErr.message);
 
       // bucket이 Public일 때 (현재 방식)
-      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      if (data?.publicUrl) uploadedUrls.push(data.publicUrl);
+    const publicUrl =
+  `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
+
+uploadedUrls.push(publicUrl);
     }
 
     return uploadedUrls;
