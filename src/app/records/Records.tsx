@@ -16,13 +16,9 @@ type RecordRow = {
   created_at: string;
 };
 
-// ✅ 로컬 날짜(UTC 밀림 방지)
 function todayYMD() {
   const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return d.toISOString().slice(0, 10);
 }
 
 function thisMonth() {
@@ -119,19 +115,15 @@ export default function Records({ userId }: { userId: string }) {
 
       if (upErr) throw new Error(upErr.message);
 
-      // ✅ public URL은 직접 조립하지 말고 SDK로 생성(안전)
-      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      uploadedUrls.push(data.publicUrl);
+      // bucket이 Public일 때 (현재 방식)
+      const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
+      uploadedUrls.push(publicUrl);
     }
 
     return uploadedUrls;
   }
 
   function extractStoragePathFromPublicUrl(url: string) {
-    // public url:
-    // https://xxxx.supabase.co/storage/v1/object/public/receipts/userId/recordId/file.jpg
-    // signed url:
-    // https://xxxx.supabase.co/storage/v1/object/sign/receipts/userId/recordId/file.jpg?token=...
     try {
       const u = new URL(url);
       const p = u.pathname;
@@ -150,7 +142,7 @@ export default function Records({ userId }: { userId: string }) {
       const prefix = `${BUCKET}/`;
       if (!after.startsWith(prefix)) return null;
 
-      return after.slice(prefix.length); // userId/recordId/file.jpg  ✅ remove()에 넣을 path
+      return after.slice(prefix.length); // userId/recordId/file.jpg
     } catch {
       return null;
     }
@@ -244,7 +236,6 @@ export default function Records({ userId }: { userId: string }) {
       }
     } catch (e: any) {
       setError(`사진 업로드 오류: ${e?.message ?? e}`);
-      // 레코드는 저장되었으니 화면만 갱신
     }
 
     resetNewForm();
@@ -307,7 +298,7 @@ export default function Records({ userId }: { userId: string }) {
       odoNum = n;
     }
 
-    // 1) 기본 필드 업데이트(현재 eReceiptUrls는 "제거" 반영된 상태)
+    // 1) 기본 필드 업데이트
     const { error: upErr1 } = await supabase
       .from("records")
       .update({
@@ -348,10 +339,9 @@ export default function Records({ userId }: { userId: string }) {
       }
     } catch (e: any) {
       setError(`사진 업로드 오류: ${e?.message ?? e}`);
-      // 업로드 실패해도 수정 자체는 되었으니 계속 진행
     }
 
-    // 3) ✅ 제거된 파일들 Storage에서도 삭제 (DB 업데이트는 이미 성공)
+    // 3) 제거된 파일 Storage에서도 삭제
     try {
       const removed = eReceiptUrlsOriginal.filter((u) => !finalUrls.includes(u));
       if (removed.length > 0) {
@@ -359,7 +349,6 @@ export default function Records({ userId }: { userId: string }) {
       }
     } catch (e: any) {
       setError(`영수증 파일 삭제 오류: ${e?.message ?? e}`);
-      // 파일 삭제 실패해도 수정은 유지
     }
 
     setEditingId(null);
@@ -378,7 +367,6 @@ export default function Records({ userId }: { userId: string }) {
 
     setError("");
 
-    // ✅ 1) 사진 먼저 삭제(실패하면 레코드 삭제 중단: 안전)
     try {
       if (r.receipt_urls && r.receipt_urls.length > 0) {
         await removeReceiptFilesByUrls(r.receipt_urls);
@@ -388,7 +376,6 @@ export default function Records({ userId }: { userId: string }) {
       return;
     }
 
-    // ✅ 2) 레코드 삭제
     const { error: delErr } = await supabase
       .from("records")
       .delete()
@@ -418,6 +405,12 @@ export default function Records({ userId }: { userId: string }) {
 
   return (
     <div className="p-4 max-w-xl mx-auto space-y-4">
+      {/* ✅ 상단 제목 추가 */}
+      <div className="flex items-end justify-between">
+        <h1 className="text-2xl font-extrabold">가계부</h1>
+        <div className="text-sm text-gray-600">월별 지출 기록</div>
+      </div>
+
       <h2 className="text-xl font-bold">이번달 합계: ${monthTotal}</h2>
 
       <div>
@@ -459,7 +452,6 @@ export default function Records({ userId }: { userId: string }) {
           ))}
         </select>
 
-        {/* ✅ 차량정비만 odometer 입력/필수 */}
         {category === "fuel_oil_tire" && (
           <input
             type="number"
@@ -612,7 +604,6 @@ export default function Records({ userId }: { userId: string }) {
                     className="w-full border p-2 rounded"
                   />
 
-                  {/* 기존 영수증 목록 + 제거 */}
                   <div className="space-y-1">
                     <div className="text-sm">기존 영수증</div>
                     {eReceiptUrls.length === 0 ? (
@@ -631,7 +622,6 @@ export default function Records({ userId }: { userId: string }) {
                     )}
                   </div>
 
-                  {/* 새 영수증 추가 업로드 */}
                   <div className="space-y-1">
                     <div className="text-sm">영수증 추가</div>
                     <input
