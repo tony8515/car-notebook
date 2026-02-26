@@ -16,9 +16,13 @@ type RecordRow = {
   created_at: string;
 };
 
+// ✅ 로컬 날짜(UTC 밀림 방지)
 function todayYMD() {
   const d = new Date();
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function thisMonth() {
@@ -115,11 +119,9 @@ export default function Records({ userId }: { userId: string }) {
 
       if (upErr) throw new Error(upErr.message);
 
-      // bucket이 Public일 때 (현재 방식)
-    const publicUrl =
-  `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
-
-uploadedUrls.push(publicUrl);
+      // ✅ public URL은 직접 조립하지 말고 SDK로 생성(안전)
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      uploadedUrls.push(data.publicUrl);
     }
 
     return uploadedUrls;

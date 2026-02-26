@@ -1,21 +1,28 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+import type { Metadata } from "next";
+
 export const metadata: Metadata = {
   title: "가계부",
-  icons: {
-    icon: "/icon.png",
+  description: "개인 가계부 앱",
+
+  applicationName: "가계부",
+  appleWebApp: {
+    capable: true,
+    title: "가계부",
+    statusBarStyle: "default",
   },
- };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="ko">
-      <body>
-        {/* ✅ 클릭 방해 절대 안 하게 pointerEvents none */}
+  manifest: "/manifest.webmanifest",
 
-        {children}
-      </body>
-    </html>
-  );
-}
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
+
+  themeColor: "#ffffff",
+};
