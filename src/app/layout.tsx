@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: "가계부",
   description: "개인 가계부 앱",
   applicationName: "가계부",
+  manifest: "/manifest.webmanifest",   // 👈 이 줄 추가
   appleWebApp: {
     capable: true,
     title: "가계부",
