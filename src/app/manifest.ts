@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "차량수첩",
-    short_name: "차량수첩",
+    name: "가계부",
+    short_name: "가계부",
     start_url: "/",
     display: "standalone",
     background_color: "#ffffff",

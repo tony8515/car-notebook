@@ -30,11 +30,12 @@ const BUCKET = "receipts";
 // 카테고리
 const categories = [
   { v: "fuel", label: "주유" },
-  { v: "oil", label: "오일교환" },
-  { v: "tire", label: "타이어" },
-  { v: "repair", label: "정비" },
-  { v: "inspection", label: "점검" },
-  { v: "registration", label: "등록/세금" },
+  { v: "oil/tire", label: "오일교환/타이어" },
+  { v: "grocery", label: "그로서리" },
+  { v: "medical", label: "의료" },
+  { v: "utility", label: "전기/개스" },
+  { v: "dining", label: "외식" },
+  { v: "sports", label: "운동" },
   { v: "other", label: "기타" },
 ];
 const catLabel = (v: string) => categories.find((c) => c.v === v)?.label ?? v;

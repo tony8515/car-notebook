@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "차량수첩",
+  title: "가계부",
   icons: {
     icon: "/icon.png",
   },
