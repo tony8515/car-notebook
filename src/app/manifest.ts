@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "가계부",
     short_name: "가계부",
     description: "개인 가계부 앱",
-    start_url: "/",
+    start_url: "/?v=20260226",
     scope: "/",
     display: "standalone",
     background_color: "#ffffff",
