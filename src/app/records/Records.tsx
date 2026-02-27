@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type RecordRow = {
@@ -74,6 +74,10 @@ export default function Records({ userId }: { userId: string }) {
   const [eReceiptUrlsOriginal, setEReceiptUrlsOriginal] = useState<string[]>([]);
 
   const [error, setError] = useState<string>("");
+
+  // ✅ 숨김 카메라 input ref (새 기록 / 수정)
+  const newCamRef = useRef<HTMLInputElement | null>(null);
+  const editCamRef = useRef<HTMLInputElement | null>(null);
 
   async function loadRecords() {
     setError("");
@@ -167,6 +171,20 @@ export default function Records({ userId }: { userId: string }) {
     setNotes("");
     setOdometer("");
     setNewFiles(null);
+    // ✅ 같은 파일 다시 찍어도 onChange가 뜨도록 value 비우기
+    if (newCamRef.current) newCamRef.current.value = "";
+  }
+
+  function openNewCamera() {
+    if (!newCamRef.current) return;
+    newCamRef.current.value = ""; // 같은 파일/사진도 다시 선택되게
+    newCamRef.current.click();
+  }
+
+  function openEditCamera() {
+    if (!editCamRef.current) return;
+    editCamRef.current.value = "";
+    editCamRef.current.click();
   }
 
   // ---------------- Create ----------------
@@ -256,6 +274,7 @@ export default function Records({ userId }: { userId: string }) {
     setEReceiptUrls(r.receipt_urls ?? []);
     setEReceiptUrlsOriginal(r.receipt_urls ?? []);
     setEFiles(null);
+    if (editCamRef.current) editCamRef.current.value = "";
   }
 
   function cancelEdit() {
@@ -263,6 +282,7 @@ export default function Records({ userId }: { userId: string }) {
     setEFiles(null);
     setEReceiptUrls([]);
     setEReceiptUrlsOriginal([]);
+    if (editCamRef.current) editCamRef.current.value = "";
   }
 
   function removeReceiptAt(idx: number) {
@@ -354,6 +374,7 @@ export default function Records({ userId }: { userId: string }) {
     setEditingId(null);
     setEFiles(null);
     setEReceiptUrlsOriginal([]);
+    if (editCamRef.current) editCamRef.current.value = "";
     loadRecords();
   }
 
@@ -405,7 +426,6 @@ export default function Records({ userId }: { userId: string }) {
 
   return (
     <div className="p-4 max-w-xl mx-auto space-y-4">
-      {/* ✅ 상단 제목 추가 */}
       <div className="flex items-end justify-between">
         <h1 className="text-2xl font-extrabold">가계부</h1>
         <div className="text-sm text-gray-600">월별 지출 기록</div>
@@ -486,15 +506,44 @@ export default function Records({ userId }: { userId: string }) {
           className="w-full border p-2 rounded"
         />
 
-        <div className="space-y-1">
-          <div className="text-sm">영수증 사진</div>
+        {/* ✅ 방법1: 숨겨진 input + 버튼 */}
+        <div className="space-y-2">
+          <div className="text-sm font-medium">영수증 사진</div>
+
           <input
+            ref={newCamRef}
             type="file"
             accept="image/*"
             capture="environment"
             multiple
+            style={{ display: "none" }}
             onChange={(e) => setNewFiles(e.target.files)}
           />
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={openNewCamera}
+              className="flex-1 bg-blue-600 text-white p-2 rounded"
+            >
+              📸 사진 찍기
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setNewFiles(null);
+                if (newCamRef.current) newCamRef.current.value = "";
+              }}
+              className="border p-2 rounded"
+            >
+              선택 취소
+            </button>
+          </div>
+
+          <div className="text-sm text-gray-600">
+            {newFiles?.length ? `선택됨: ${newFiles.length}장` : "선택된 사진 없음"}
+          </div>
         </div>
 
         <button onClick={handleSave} className="w-full bg-black text-white p-2 rounded">
@@ -604,6 +653,7 @@ export default function Records({ userId }: { userId: string }) {
                     className="w-full border p-2 rounded"
                   />
 
+                  {/* 기존 영수증 목록 + 제거 */}
                   <div className="space-y-1">
                     <div className="text-sm">기존 영수증</div>
                     {eReceiptUrls.length === 0 ? (
@@ -622,15 +672,44 @@ export default function Records({ userId }: { userId: string }) {
                     )}
                   </div>
 
-                  <div className="space-y-1">
-                    <div className="text-sm">영수증 추가</div>
+                  {/* ✅ 방법1: 숨겨진 input + 버튼 (수정에서 영수증 추가) */}
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">영수증 추가</div>
+
                     <input
+                      ref={editCamRef}
                       type="file"
                       accept="image/*"
                       capture="environment"
                       multiple
+                      style={{ display: "none" }}
                       onChange={(e) => setEFiles(e.target.files)}
                     />
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={openEditCamera}
+                        className="flex-1 bg-blue-600 text-white p-2 rounded"
+                      >
+                        📸 사진 찍기
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEFiles(null);
+                          if (editCamRef.current) editCamRef.current.value = "";
+                        }}
+                        className="border p-2 rounded"
+                      >
+                        선택 취소
+                      </button>
+                    </div>
+
+                    <div className="text-sm text-gray-600">
+                      {eFiles?.length ? `선택됨: ${eFiles.length}장` : "선택된 사진 없음"}
+                    </div>
                   </div>
 
                   <div className="flex gap-2">
