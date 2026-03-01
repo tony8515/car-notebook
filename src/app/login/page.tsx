@@ -14,7 +14,7 @@ export default function LoginPage() {
   // 이미 로그인 돼 있으면 홈으로
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.user) router.replace("/");
+      if (data.session?.user) router.replace("/records");
     });
   }, [router]);
 
@@ -31,7 +31,7 @@ export default function LoginPage() {
     });
 
     if (error) return setMsg("로그인 실패: " + error.message);
-    router.replace("/");
+    router.replace("/records");
   }
 
   async function sendMagicLink() {
