@@ -14,7 +14,7 @@ export default function Page() {
     })();
   }, []);
 
-  if (!userId) return <div className="p-4">Loading...</div>;
+  if (!userId) return <div className="max-w-x1 mx-auto p-4">Loading...</div>;
 
   return <Records userId={userId} />;
 }
