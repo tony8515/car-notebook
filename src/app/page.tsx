@@ -1,3 +1,4 @@
+
 "use client";
 
 import Records from "./records/Records";

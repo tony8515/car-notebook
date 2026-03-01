@@ -1,5 +1,6 @@
 import Records from "./Records";
 
 export default function Page() {
-  return <Records />;
+  return <Records 
+  userID="public" />;
 }
