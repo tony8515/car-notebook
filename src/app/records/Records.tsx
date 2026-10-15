@@ -101,11 +101,40 @@ export default function Records({ userId }: { userId: string }) {
 
   // ---------------- Storage helpers ----------------
 
+  async function compressReceipt(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || file.type === "image/svg+xml") return file;
+
+  const bitmap = await createImageBitmap(file);
+  try {
+    const maxSize = 1600;
+    const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.75)
+    );
+    if (!blob || blob.size >= file.size) return file;
+
+    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", {
+      type: "image/jpeg",
+    });
+  } finally {
+    bitmap.close();
+  }
+}
   async function uploadReceipts(recordId: string, files: FileList) {
     const uploadedUrls: string[] = [];
 
     for (let i = 0; i < files.length; i++) {
-      const f = files[i];
+const f = await compressReceipt(files[i]);
       const ext = f.name.split(".").pop() || "jpg";
       const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
       const filename = `${crypto.randomUUID()}.${safeExt}`;
