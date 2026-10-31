@@ -13,6 +13,7 @@ type RecordRow = {
   vendor: string | null;
   notes: string | null;
   receipt_urls: string[] | null;
+  trip_name?: string | null;
   created_at: string;
 };
 
@@ -47,10 +48,13 @@ CATEGORY_LABEL["etc"] = "기타";
 CATEGORY_LABEL["sports"] = "운동";
 
 const BUCKET = "receipts"; // ✅ 반드시 소문자 receipts
+const LAST_TRIP_KEY = "car_notebook_selected_trip_name";
 
 export default function Records({ userId }: { userId: string }) {
   const [records, setRecords] = useState<RecordRow[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(thisMonth());
+  const [newTripName, setNewTripName] = useState("");
+  const [expandedTrip, setExpandedTrip] = useState<string | null>(null);
 
   // 새 기록
   const [date, setDate] = useState(todayYMD());
@@ -69,6 +73,7 @@ export default function Records({ userId }: { userId: string }) {
   const [eCost, setECost] = useState("");
   const [eVendor, setEVendor] = useState("");
   const [eNotes, setENotes] = useState("");
+  const [eTripName, setETripName] = useState("");
   const [eFiles, setEFiles] = useState<FileList | null>(null);
   const [eReceiptUrls, setEReceiptUrls] = useState<string[]>([]);
   const [eReceiptUrlsOriginal, setEReceiptUrlsOriginal] = useState<string[]>([]);
@@ -98,6 +103,15 @@ export default function Records({ userId }: { userId: string }) {
     if (userId) loadRecords();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  // Restore the last selected trip for new expenses (same key used previously).
+  useEffect(() => {
+    try {
+      setNewTripName(window.localStorage.getItem(LAST_TRIP_KEY) || "");
+    } catch {
+      // Private browsing / disabled storage: use an empty trip name.
+    }
+  }, []);
 
   // ---------------- Storage helpers ----------------
 
@@ -258,6 +272,7 @@ const f = await compressReceipt(files[i]);
         vendor: vendor.trim() ? vendor.trim() : null,
         notes: notes.trim() ? notes.trim() : null,
         receipt_urls: [],
+        trip_name: newTripName.trim() || null,
       })
       .select("*")
       .single();
@@ -285,6 +300,11 @@ const f = await compressReceipt(files[i]);
       setError(`사진 업로드 오류: ${e?.message ?? e}`);
     }
 
+    try {
+      window.localStorage.setItem(LAST_TRIP_KEY, newTripName.trim());
+    } catch {
+      // Storage is optional.
+    }
     resetNewForm();
     loadRecords();
   }
@@ -300,6 +320,7 @@ const f = await compressReceipt(files[i]);
     setECost(String(r.cost ?? ""));
     setEVendor(r.vendor ?? "");
     setENotes(r.notes ?? "");
+    setETripName(r.trip_name ?? "");
     setEReceiptUrls(r.receipt_urls ?? []);
     setEReceiptUrlsOriginal(r.receipt_urls ?? []);
     setEFiles(null);
@@ -357,6 +378,7 @@ const f = await compressReceipt(files[i]);
         cost: costNum,
         vendor: eVendor.trim() ? eVendor.trim() : null,
         notes: eNotes.trim() ? eNotes.trim() : null,
+        trip_name: eTripName.trim() || null,
         receipt_urls: eReceiptUrls,
       })
       .eq("id", editingId)
@@ -451,10 +473,34 @@ const f = await compressReceipt(files[i]);
     return filtered.reduce((sum, r) => sum + (Number(r.cost) || 0), 0).toFixed(2);
   }, [filtered]);
 
+  // All-time trip totals, independent of the selected month.
+  // Empty trip name is a separate "unassigned" group so old records remain visible.
+  const tripSummaries = useMemo(() => {
+    const byTrip = new Map<string, { name: string; total: number; items: RecordRow[] }>();
+    for (const row of records) {
+      const name = (row.trip_name ?? "").trim();
+      const group = byTrip.get(name) ?? { name, total: 0, items: [] };
+      group.total += Number(row.cost) || 0;
+      group.items.push(row);
+      byTrip.set(name, group);
+    }
+    return [...byTrip.values()].sort((a, b) => {
+      if (!a.name) return 1;
+      if (!b.name) return -1;
+      return a.name.localeCompare(b.name, "ko");
+    });
+  }, [records]);
+
+  const tripNames = useMemo(() => {
+    const names = new Set(records.map((r) => (r.trip_name ?? "").trim()).filter(Boolean));
+    if (newTripName.trim()) names.add(newTripName.trim());
+    return [...names].sort((a, b) => a.localeCompare(b, "ko"));
+  }, [records, newTripName]);
+
   // ---------------- Render ----------------
 
   return (
-    <div className="p-4 max-w-xl mx-auto space-y-4">
+    <div className="car-records p-4 max-w-xl mx-auto space-y-4">
       <div className="flex items-end justify-between">
         <h1 className="text-2xl font-extrabold">가계부</h1>
         <div className="text-sm text-gray-600">월별 지출 기록</div>
@@ -471,6 +517,50 @@ const f = await compressReceipt(files[i]);
           className="border p-2 rounded w-full"
         />
       </div>
+
+      <datalist id="trip-name-options">
+        {tripNames.map((name) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
+
+      <section className="trip-section" aria-label="Trip별 경비 합계">
+        <h3 className="font-semibold">Trip별 경비 합계 (전체 기간)</h3>
+        {tripSummaries.length === 0 ? (
+          <p className="text-sm text-gray-600">아직 기록이 없습니다.</p>
+        ) : (
+          tripSummaries.map((trip) => (
+            <div className="trip-group" key={trip.name || "__unassigned"}>
+              <button
+                type="button"
+                className="trip-toggle"
+                aria-expanded={expandedTrip === trip.name}
+                onClick={() => setExpandedTrip(expandedTrip === trip.name ? null : trip.name)}
+              >
+                <span>{trip.name || "Trip 미지정"} <small>({trip.items.length}건)</small></span>
+                <strong>${trip.total.toFixed(2)} {expandedTrip === trip.name ? "▲" : "▼"}</strong>
+              </button>
+              {expandedTrip === trip.name && (
+                <div className="trip-details">
+                  {trip.items.map((item) => (
+                    <div className="trip-detail-row" key={item.id}>
+                      <div>
+                        <strong>{item.date}</strong> · {CATEGORY_LABEL[item.category] ?? item.category}
+                        {item.vendor ? ` · ${item.vendor}` : ""}
+                        {item.notes ? <div className="text-sm text-gray-600">{item.notes}</div> : null}
+                        {item.receipt_urls?.length ? (
+                          <a href={item.receipt_urls[0]} target="_blank" rel="noreferrer">영수증 보기</a>
+                        ) : null}
+                      </div>
+                      <strong>${Number(item.cost || 0).toFixed(2)}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </section>
 
       {error && <div className="text-red-600 whitespace-pre-wrap">{error}</div>}
 
@@ -500,6 +590,18 @@ const f = await compressReceipt(files[i]);
             </option>
           ))}
         </select>
+
+        <div className="trip-field">
+          <label htmlFor="new-trip-name">Trip (여행 이름, 선택사항)</label>
+          <input
+            id="new-trip-name"
+            list="trip-name-options"
+            placeholder="예: 2026 Spring West Road Trip"
+            value={newTripName}
+            onChange={(e) => setNewTripName(e.target.value)}
+          />
+          <p className="text-sm text-gray-600">기존 여행을 선택하거나 새 이름을 입력하세요. 선택한 Trip은 다음 기록에도 유지됩니다.</p>
+        </div>
 
         {category === "fuel_oil_tire" && (
           <input
@@ -607,6 +709,7 @@ const f = await compressReceipt(files[i]);
                   </div>
 
                   {r.vendor && <div className="text-sm">{r.vendor}</div>}
+                  {r.trip_name && <div className="text-sm">Trip: {r.trip_name}</div>}
                   {r.notes && <div className="text-sm whitespace-pre-wrap">{r.notes}</div>}
 
                   {!!(r.receipt_urls?.length) && (
@@ -647,6 +750,17 @@ const f = await compressReceipt(files[i]);
                       </option>
                     ))}
                   </select>
+
+                  <div className="trip-field">
+                    <label htmlFor="edit-trip-name">Trip (여행 이름, 선택사항)</label>
+                    <input
+                      id="edit-trip-name"
+                      list="trip-name-options"
+                      value={eTripName}
+                      onChange={(e) => setETripName(e.target.value)}
+                      placeholder="Trip 미지정"
+                    />
+                  </div>
 
                   {eCategory === "fuel_oil_tire" && (
                     <input
