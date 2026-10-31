@@ -62,3 +62,64 @@ button {
 .hidden {
   display: none;
 }
+
+
+/* Scoped records page styles. This project does not load Tailwind CSS. */
+.car-records { max-width: 780px; margin: 0 auto; padding: 22px 16px 56px; display: flex; flex-direction: column; gap: 16px; }
+.car-records h1,.car-records h2,.car-records h3,.car-records p { margin: 0 0 8px; }
+.car-records h1 { font-size: 28px; font-weight: 800; }
+.car-records h2 { font-size: 22px; font-weight: 750; }
+.car-records h3 { font-size: 18px; font-weight: 700; }
+.car-records label { display:block; font-size: 14px; margin-bottom: 6px; }
+.car-records input,.car-records select,.car-records textarea { display:block; width:100%; min-width:0; padding:11px 12px; border:1px solid #cbd5e1; border-radius:9px; background:#fff; color:#111827; font-size:16px; }
+.car-records textarea { min-height:76px; resize:vertical; }
+.car-records input[type="file"] { display:none; }
+.car-records button { padding:10px 14px; border:1px solid #cbd5e1; border-radius:9px; background:#fff; color:#111827; font-weight:600; line-height:1.35; }
+.car-records button:hover { filter:brightness(.96); }
+.car-records .border { border:1px solid #e2e8f0; }
+.car-records .rounded { border-radius:10px; }
+.car-records .p-3 { padding:15px; }
+.car-records .p-2 { padding:10px; }
+.car-records .px-2 { padding-left:11px; padding-right:11px; }
+.car-records .py-1 { padding-top:7px; padding-bottom:7px; }
+.car-records .space-y-2 > * + * { margin-top:10px; }
+.car-records .space-y-4 > * + * { margin-top:16px; }
+.car-records .flex { display:flex; }
+.car-records .flex-1 { flex:1; min-width:0; }
+.car-records .flex-col { flex-direction:column; }
+.car-records .flex-wrap { flex-wrap:wrap; }
+.car-records .items-center { align-items:center; }
+.car-records .items-end { align-items:flex-end; }
+.car-records .justify-between { justify-content:space-between; }
+.car-records .gap-2 { gap:8px; }
+.car-records .w-full { width:100%; }
+.car-records .text-sm { font-size:13px; }
+.car-records .font-semibold { font-weight:700; }
+.car-records .text-gray-600 { color:#475569; }
+.car-records .text-red-600 { color:#b91c1c; }
+.car-records .text-white { color:#fff; }
+.car-records .bg-black { background:#111827; color:#fff; border-color:#111827; }
+.car-records .bg-blue-600 { background:#2563eb; color:#fff; border-color:#2563eb; }
+.car-records .underline { text-decoration:underline; }
+.car-records .whitespace-pre-wrap { white-space:pre-wrap; }
+.car-records .ml-2 { margin-left:8px; }
+.car-records .mb-1 { margin-bottom:5px; }
+.car-records .trip-section { border:1px solid #dbe5f1; border-radius:12px; padding:14px; background:#f8fafc; }
+.car-records .trip-section h3 { margin-bottom:10px; }
+.car-records .trip-group + .trip-group { margin-top:7px; }
+.car-records .trip-toggle { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; background:#fff; }
+.car-records .trip-toggle strong { white-space:nowrap; }
+.car-records .trip-toggle small { font-weight:400; color:#64748b; }
+.car-records .trip-details { padding:8px 4px; }
+.car-records .trip-detail-row { padding:9px 4px; display:flex; gap:14px; justify-content:space-between; border-bottom:1px solid #e2e8f0; font-size:14px; }
+.car-records .trip-detail-row a { display:inline-block; margin-top:4px; color:#1d4ed8; text-decoration:underline; }
+.car-records .trip-detail-row > strong { white-space:nowrap; }
+.car-records .trip-field { margin:10px 0; }
+.car-records .trip-field p { margin-top:5px; }
+@media (max-width:520px) {
+  .car-records { padding:16px 12px 36px; }
+  .car-records h1 { font-size:25px; }
+  .car-records h2 { font-size:20px; }
+  .car-records .trip-toggle { align-items:flex-start; }
+  .car-records .trip-toggle strong { font-size:14px; }
+}
