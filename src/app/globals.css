@@ -123,3 +123,37 @@ button {
   .car-records .trip-toggle { align-items:flex-start; }
   .car-records .trip-toggle strong { font-size:14px; }
 }
+
+/* Trip picker: an inline, scrollable vertical list instead of the browser datalist popup. */
+.car-records .trip-picker { width:100%; min-width:0; }
+.car-records .trip-picker-entry { display:flex; align-items:stretch; gap:8px; width:100%; min-width:0; }
+.car-records .trip-picker-entry input { flex:1; width:100%; min-width:0; }
+.car-records .trip-picker-entry .trip-picker-toggle { flex:0 0 auto; white-space:nowrap; background:#e8efff; border-color:#a5b4fc; }
+.car-records .trip-picker-panel { margin-top:8px; width:100%; min-width:0; padding:9px; background:#fff; border:1px solid #cbd5e1; border-radius:10px; box-shadow:0 3px 10px rgba(15,23,42,.08); }
+.car-records .trip-picker-panel > input { margin-bottom:7px; }
+.car-records .trip-picker-list { max-height:268px; overflow-y:auto; overflow-x:hidden; border:1px solid #e2e8f0; border-radius:8px; }
+.car-records .trip-picker-list button { width:100%; display:block; padding:12px; border:0; border-bottom:1px solid #e2e8f0; border-radius:0; text-align:left; white-space:normal; overflow-wrap:anywhere; background:#fff; font-size:15px; }
+.car-records .trip-picker-list button:last-child { border-bottom:0; }
+.car-records .trip-picker-list button.trip-picker-selected { background:#eff6ff; color:#1d4ed8; }
+.car-records .trip-picker-list p { padding:12px; margin:0; color:#475569; font-size:13px; }
+.car-records .trip-picker-panel .trip-picker-hint { margin:8px 2px 0; color:#475569; font-size:12px; }
+.car-records .trip-section-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+.car-records .trip-section-heading h3 { margin:0; }
+.car-records .trip-section-heading button { font-size:13px; padding:8px 10px; background:#e8efff; border-color:#a5b4fc; }
+.car-records .trip-manage { padding:12px; margin-bottom:12px; background:#fff; border:1px solid #cbd5e1; border-radius:10px; }
+.car-records .trip-manage > p { font-size:13px; color:#475569; }
+.car-records .trip-manage-row { display:flex; flex-wrap:wrap; gap:8px; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #e2e8f0; }
+.car-records .trip-manage-row:last-child { border-bottom:0; }
+.car-records .trip-manage-name { min-width:0; flex:1; overflow-wrap:anywhere; font-size:14px; font-weight:650; }
+.car-records .trip-manage-name small { color:#64748b; font-weight:400; }
+.car-records .trip-manage-row label { width:100%; margin:0; }
+.car-records .trip-manage-row input { width:100%; }
+.car-records .trip-manage-actions { display:flex; gap:6px; flex-wrap:wrap; }
+.car-records .trip-manage-actions button { padding:7px 10px; font-size:13px; }
+.car-records .trip-manage-actions button:disabled { opacity:.55; cursor:not-allowed; }
+.car-records .trip-notice { font-size:13px; color:#166534; margin-bottom:10px; }
+@media (max-width:520px) {
+  .car-records .trip-picker-entry .trip-picker-toggle { padding:8px; font-size:13px; }
+  .car-records .trip-manage-row { align-items:stretch; flex-direction:column; }
+  .car-records .trip-manage-actions button { flex:1; }
+}
