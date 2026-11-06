@@ -131,7 +131,7 @@ button {
 .car-records .trip-picker-entry .trip-picker-toggle { flex:0 0 auto; white-space:nowrap; background:#e8efff; border-color:#a5b4fc; }
 .car-records .trip-picker-panel { margin-top:8px; width:100%; min-width:0; padding:9px; background:#fff; border:1px solid #cbd5e1; border-radius:10px; box-shadow:0 3px 10px rgba(15,23,42,.08); }
 .car-records .trip-picker-panel > input { margin-bottom:7px; }
-.car-records .trip-picker-list { max-height:268px; overflow-y:auto; overflow-x:hidden; border:1px solid #e2e8f0; border-radius:8px; }
+.car-records .trip-picker-list { max-height:min(60vh, 480px); overflow-y:auto; overflow-x:hidden; border:1px solid #e2e8f0; border-radius:8px; }
 .car-records .trip-picker-list button { width:100%; display:block; padding:12px; border:0; border-bottom:1px solid #e2e8f0; border-radius:0; text-align:left; white-space:normal; overflow-wrap:anywhere; background:#fff; font-size:15px; }
 .car-records .trip-picker-list button:last-child { border-bottom:0; }
 .car-records .trip-picker-list button.trip-picker-selected { background:#eff6ff; color:#1d4ed8; }
