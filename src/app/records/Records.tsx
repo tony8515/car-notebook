@@ -50,11 +50,122 @@ CATEGORY_LABEL["sports"] = "운동";
 const BUCKET = "receipts"; // ✅ 반드시 소문자 receipts
 const LAST_TRIP_KEY = "car_notebook_selected_trip_name";
 
+// A full-width, vertical Trip list works better on phones than a native datalist.
+function TripPicker({
+  id,
+  value,
+  onChange,
+  names,
+  placeholder,
+}: {
+  id: string;
+  value: string;
+  onChange: (name: string) => void;
+  names: string[];
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function closeOutside(event: PointerEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  const matches = names.filter((name) =>
+    name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
+  );
+
+  function choose(name: string) {
+    onChange(name);
+    setOpen(false);
+    setSearch("");
+  }
+
+  return (
+    <div className="trip-picker" ref={pickerRef}>
+      <div className="trip-picker-entry">
+        <input
+          id={id}
+          type="text"
+          autoComplete="off"
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          className="trip-picker-toggle"
+          aria-expanded={open}
+          aria-controls={id + "-options"}
+          onClick={() => {
+            setSearch("");
+            setOpen((current) => !current);
+          }}
+        >
+          {open ? "닫기 ▲" : "Trip 목록 ▼"}
+        </button>
+      </div>
+      {open && (
+        <div className="trip-picker-panel" id={id + "-options"}>
+          <input
+            type="search"
+            aria-label="Trip 목록에서 검색"
+            placeholder="Trip 검색"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div className="trip-picker-list">
+            {!search.trim() && (
+              <button type="button" onClick={() => choose("")}>
+                Trip 미지정 (여행 지정 해제)
+              </button>
+            )}
+            {matches.map((name) => (
+              <button
+                type="button"
+                key={name}
+                className={value.trim() === name ? "trip-picker-selected" : ""}
+                onClick={() => choose(name)}
+              >
+                {name}
+              </button>
+            ))}
+            {matches.length === 0 && (
+              <p>일치하는 Trip이 없습니다. 위 칸에 새 이름을 직접 입력할 수 있습니다.</p>
+            )}
+          </div>
+          <p className="trip-picker-hint">목록은 세로로 표시됩니다. 새 여행은 위 이름 칸에 직접 입력하세요.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Records({ userId }: { userId: string }) {
   const [records, setRecords] = useState<RecordRow[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(thisMonth());
   const [newTripName, setNewTripName] = useState("");
   const [expandedTrip, setExpandedTrip] = useState<string | null>(null);
+  const [managingTrips, setManagingTrips] = useState(false);
+  const [renamingTrip, setRenamingTrip] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [tripBusy, setTripBusy] = useState(false);
+  const [tripNotice, setTripNotice] = useState("");
 
   // 새 기록
   const [date, setDate] = useState(todayYMD());
@@ -86,17 +197,27 @@ export default function Records({ userId }: { userId: string }) {
 
   async function loadRecords() {
     setError("");
-    const { data, error } = await supabase
-      .from("records")
-      .select("*")
-      .eq("user_id", userId)
-      .order("date", { ascending: false });
+    // Fetch every page: Supabase installations commonly cap a result at 1,000 rows.
+    const pageSize = 500;
+    const allRecords: RecordRow[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase
+        .from("records")
+        .select("*")
+        .eq("user_id", userId)
+        .order("date", { ascending: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + pageSize - 1);
 
-    if (error) {
-      setError(error.message);
-      return;
+      if (error) {
+        setError(error.message);
+        return;
+      }
+      const page = (data as RecordRow[]) ?? [];
+      allRecords.push(...page);
+      if (page.length < pageSize) break;
     }
-    setRecords((data as RecordRow[]) ?? []);
+    setRecords(allRecords);
   }
 
   useEffect(() => {
@@ -463,6 +584,77 @@ const f = await compressReceipt(files[i]);
     loadRecords();
   }
 
+  // Trip names live in records.trip_name, not in a separate trips table.
+  // Renaming/unassigning a Trip must preserve the expense rows and receipt files.
+  async function changeTripName(oldName: string, nextName: string | null) {
+    if (tripBusy || !oldName) return;
+
+    const matched = records.filter((r) => (r.trip_name ?? "").trim() === oldName);
+    if (matched.length === 0) {
+      setError("해당 Trip의 경비 기록을 찾지 못했습니다.");
+      return;
+    }
+
+    if (nextName !== null && !nextName.trim()) {
+      setError("새 Trip 이름을 입력하세요. Trip을 없애려면 삭제 버튼을 사용하세요.");
+      return;
+    }
+    const target = nextName === null ? null : nextName.trim();
+    if (target === oldName) {
+      setRenamingTrip(null);
+      return;
+    }
+
+    const merging = target !== null && records.some((r) => (r.trip_name ?? "").trim() === target);
+    const message = target === null
+      ? "Trip ‘" + oldName + "’ 지정만 삭제할까요? " + matched.length + "건의 경비 및 영수증은 그대로 남고 ‘Trip 미지정’으로 옮겨집니다."
+      : "Trip ‘" + oldName + "’의 " + matched.length + "건 이름을 ‘" + target + "’(으)로 변경할까요?" +
+        (merging ? " 기존 ‘" + target + "’ Trip과 합쳐집니다." : "");
+    if (!window.confirm(message)) return;
+
+    // Exact stored spellings may differ by surrounding whitespace.
+    const storedNames = [...new Set(matched.map((r) => r.trip_name).filter((s): s is string => !!s))];
+    setTripBusy(true);
+    setError("");
+    setTripNotice("");
+    try {
+      const { data, error: updateError } = await supabase
+        .from("records")
+        .update({ trip_name: target })
+        .eq("user_id", userId)
+        .in("trip_name", storedNames)
+        .select("id");
+
+      if (updateError) throw new Error(updateError.message);
+      if ((data?.length ?? 0) < matched.length) {
+        throw new Error("일부 기록이 변경되지 않았습니다. 목록을 다시 확인해 주세요.");
+      }
+
+      const replacement = target ?? "";
+      setNewTripName((current) => current.trim() === oldName ? replacement : current);
+      setETripName((current) => current.trim() === oldName ? replacement : current);
+      setExpandedTrip((current) => current === oldName ? replacement : current);
+      try {
+        if ((window.localStorage.getItem(LAST_TRIP_KEY) ?? "").trim() === oldName) {
+          window.localStorage.setItem(LAST_TRIP_KEY, replacement);
+        }
+      } catch {
+        // Local storage is optional.
+      }
+
+      setRenamingTrip(null);
+      await loadRecords();
+      setTripNotice(target === null
+        ? "Trip 지정이 해제되었습니다. 경비 " + matched.length + "건과 영수증은 유지됩니다."
+        : "Trip 이름을 변경했습니다. 경비 " + matched.length + "건에도 반영되었습니다.");
+    } catch (e: unknown) {
+      await loadRecords();
+      setError("Trip 수정 실패: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setTripBusy(false);
+    }
+  }
+
   // ---------------- Derived ----------------
 
   const filtered = useMemo(() => {
@@ -493,9 +685,8 @@ const f = await compressReceipt(files[i]);
 
   const tripNames = useMemo(() => {
     const names = new Set(records.map((r) => (r.trip_name ?? "").trim()).filter(Boolean));
-    if (newTripName.trim()) names.add(newTripName.trim());
     return [...names].sort((a, b) => a.localeCompare(b, "ko"));
-  }, [records, newTripName]);
+  }, [records]);
 
   // ---------------- Render ----------------
 
@@ -518,14 +709,77 @@ const f = await compressReceipt(files[i]);
         />
       </div>
 
-      <datalist id="trip-name-options">
-        {tripNames.map((name) => (
-          <option key={name} value={name} />
-        ))}
-      </datalist>
-
       <section className="trip-section" aria-label="Trip별 경비 합계">
-        <h3 className="font-semibold">Trip별 경비 합계 (전체 기간)</h3>
+        <div className="trip-section-heading">
+          <h3 className="font-semibold">Trip별 경비 합계 (전체 기간)</h3>
+          <button
+            type="button"
+            aria-expanded={managingTrips}
+            onClick={() => {
+              setManagingTrips((current) => !current);
+              setRenamingTrip(null);
+              setTripNotice("");
+            }}
+          >
+            {managingTrips ? "Trip 관리 닫기" : "Trip 관리 / 이름 수정·삭제"}
+          </button>
+        </div>
+        {managingTrips && (
+          <div className="trip-manage">
+            <p>Trip 이름을 수정하면 그 여행의 모든 경비에 반영됩니다. 삭제해도 경비와 영수증은 삭제되지 않습니다.</p>
+            {tripSummaries.filter((trip) => !!trip.name).length === 0 && (
+              <p>관리할 Trip이 없습니다.</p>
+            )}
+            {tripSummaries.filter((trip) => !!trip.name).map((trip) => (
+              <div className="trip-manage-row" key={trip.name}>
+                {renamingTrip === trip.name ? (
+                  <>
+                    <label htmlFor="trip-rename-input">Trip 이름 수정 ({trip.items.length}건)</label>
+                    <input
+                      id="trip-rename-input"
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      disabled={tripBusy}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void changeTripName(trip.name, renameDraft);
+                        if (e.key === "Escape") setRenamingTrip(null);
+                      }}
+                    />
+                    <div className="trip-manage-actions">
+                      <button type="button" disabled={tripBusy} onClick={() => changeTripName(trip.name, renameDraft)}>저장</button>
+                      <button type="button" disabled={tripBusy} onClick={() => setRenamingTrip(null)}>취소</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="trip-manage-name">{trip.name} <small>({trip.items.length}건)</small></div>
+                    <div className="trip-manage-actions">
+                      <button
+                        type="button"
+                        disabled={tripBusy}
+                        onClick={() => {
+                          setRenamingTrip(trip.name);
+                          setRenameDraft(trip.name);
+                          setTripNotice("");
+                        }}
+                      >
+                        이름 수정
+                      </button>
+                      <button
+                        type="button"
+                        disabled={tripBusy}
+                        onClick={() => changeTripName(trip.name, null)}
+                      >
+                        Trip 삭제
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {tripNotice && <p className="trip-notice" role="status">{tripNotice}</p>}
         {tripSummaries.length === 0 ? (
           <p className="text-sm text-gray-600">아직 기록이 없습니다.</p>
         ) : (
@@ -593,12 +847,12 @@ const f = await compressReceipt(files[i]);
 
         <div className="trip-field">
           <label htmlFor="new-trip-name">Trip (여행 이름, 선택사항)</label>
-          <input
+          <TripPicker
             id="new-trip-name"
-            list="trip-name-options"
-            placeholder="예: 2026 Spring West Road Trip"
+            names={tripNames}
             value={newTripName}
-            onChange={(e) => setNewTripName(e.target.value)}
+            onChange={setNewTripName}
+            placeholder="예: 2026 Spring West Road Trip"
           />
           <p className="text-sm text-gray-600">기존 여행을 선택하거나 새 이름을 입력하세요. 선택한 Trip은 다음 기록에도 유지됩니다.</p>
         </div>
@@ -753,11 +1007,11 @@ const f = await compressReceipt(files[i]);
 
                   <div className="trip-field">
                     <label htmlFor="edit-trip-name">Trip (여행 이름, 선택사항)</label>
-                    <input
+                    <TripPicker
                       id="edit-trip-name"
-                      list="trip-name-options"
+                      names={tripNames}
                       value={eTripName}
-                      onChange={(e) => setETripName(e.target.value)}
+                      onChange={setETripName}
                       placeholder="Trip 미지정"
                     />
                   </div>
