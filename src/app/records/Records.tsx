@@ -197,17 +197,27 @@ export default function Records({ userId }: { userId: string }) {
 
   async function loadRecords() {
     setError("");
-    const { data, error } = await supabase
-      .from("records")
-      .select("*")
-      .eq("user_id", userId)
-      .order("date", { ascending: false });
+    // Fetch every page: Supabase installations commonly cap a result at 1,000 rows.
+    const pageSize = 500;
+    const allRecords: RecordRow[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase
+        .from("records")
+        .select("*")
+        .eq("user_id", userId)
+        .order("date", { ascending: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + pageSize - 1);
 
-    if (error) {
-      setError(error.message);
-      return;
+      if (error) {
+        setError(error.message);
+        return;
+      }
+      const page = (data as RecordRow[]) ?? [];
+      allRecords.push(...page);
+      if (page.length < pageSize) break;
     }
-    setRecords((data as RecordRow[]) ?? []);
+    setRecords(allRecords);
   }
 
   useEffect(() => {
