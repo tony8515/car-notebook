@@ -159,6 +159,8 @@ function TripPicker({
 export default function Records({ userId }: { userId: string }) {
   const [records, setRecords] = useState<RecordRow[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(thisMonth());
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [newTripName, setNewTripName] = useState("");
   const [expandedTrip, setExpandedTrip] = useState<string | null>(null);
   const [managingTrips, setManagingTrips] = useState(false);
@@ -665,6 +667,42 @@ const f = await compressReceipt(files[i]);
     return filtered.reduce((sum, r) => sum + (Number(r.cost) || 0), 0).toFixed(2);
   }, [filtered]);
 
+  // Annual category totals include every expense, regardless of Trip or selected month.
+  // Keep historic category keys grouped with their current names.
+  const availableYears = useMemo(() => {
+    const years = new Set<string>([String(new Date().getFullYear())]);
+    for (const row of records) {
+      const year = row.date.slice(0, 4);
+      if (/^\d{4}$/.test(year)) years.add(year);
+    }
+    return [...years].sort((a, b) => b.localeCompare(a));
+  }, [records]);
+
+  const annualCategories = useMemo(() => {
+    const groups = new Map<string, { key: string; label: string; total: number; items: RecordRow[] }>();
+    for (const category of CATEGORIES) {
+      groups.set(category.key, { key: category.key, label: category.label, total: 0, items: [] });
+    }
+    for (const row of records) {
+      if (!row.date.startsWith(selectedYear + "-")) continue;
+      const key = row.category === "sports" ? "exercise"
+        : row.category === "etc" ? "other" : row.category;
+      const group = groups.get(key) ?? {
+        key, label: CATEGORY_LABEL[key] ?? key, total: 0, items: [],
+      };
+      group.total += Number(row.cost) || 0;
+      group.items.push(row);
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  }, [records, selectedYear]);
+
+  const annualTotal = annualCategories.reduce((sum, group) => sum + group.total, 0);
+  const annualCount = annualCategories.reduce((sum, group) => sum + group.items.length, 0);
+  function money(value: number) {
+    return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   // All-time trip totals, independent of the selected month.
   // Empty trip name is a separate "unassigned" group so old records remain visible.
   const tripSummaries = useMemo(() => {
@@ -708,6 +746,76 @@ const f = await compressReceipt(files[i]);
           className="border p-2 rounded w-full"
         />
       </div>
+
+      <section className="category-section" aria-label="연도별 카테고리 지출 합계">
+        <div className="category-heading">
+          <h3>연도별 카테고리 합계</h3>
+          <div className="category-year-picker">
+            <label htmlFor="category-year">조회 연도</label>
+            <select
+              id="category-year"
+              value={selectedYear}
+              onChange={(e) => {
+                setSelectedYear(e.target.value);
+                setExpandedCategory(null);
+              }}
+            >
+              {availableYears.map((year) => (
+                <option key={year} value={year}>{year}년</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <p className="category-annual-total">
+          {selectedYear}년 전체 합계: <strong>{"$" + money(annualTotal)}</strong>
+          <span> ({annualCount}건)</span>
+        </p>
+        {annualCount === 0 && (
+          <p className="text-sm text-gray-600">선택한 연도에 지출 기록이 없습니다.</p>
+        )}
+        {annualCategories.map((group) => (
+          <div className="category-group" key={group.key}>
+            <button
+              type="button"
+              className="category-toggle"
+              aria-expanded={expandedCategory === group.key}
+              onClick={() => setExpandedCategory((current) => current === group.key ? null : group.key)}
+            >
+              <span className="category-name">
+                {group.label} <small>({group.items.length}건)</small>
+              </span>
+              <strong>{"$" + money(group.total)} <span aria-hidden="true">{expandedCategory === group.key ? "▲" : "▼"}</span></strong>
+            </button>
+            {expandedCategory === group.key && (
+              <div className="category-details">
+                {group.items.length === 0 ? (
+                  <p className="text-sm text-gray-600">이 카테고리에 해당하는 기록이 없습니다.</p>
+                ) : group.items.map((item) => (
+                  <div className="category-detail-row" key={item.id}>
+                    <div className="category-detail-description">
+                      <strong>{item.date}</strong>
+                      {item.vendor ? " · " + item.vendor : ""}
+                      {item.trip_name ? <div className="text-sm text-gray-600">Trip: {item.trip_name}</div> : null}
+                      {item.odometer != null ? <div className="text-sm text-gray-600">주행거리: {item.odometer.toLocaleString()} mi</div> : null}
+                      {item.notes ? <div className="text-sm text-gray-600 whitespace-pre-wrap">{item.notes}</div> : null}
+                      {!!item.receipt_urls?.length && (
+                        <div className="category-receipts">
+                          {item.receipt_urls.map((url, index) => (
+                            <a key={index} href={url} target="_blank" rel="noreferrer">
+                              영수증 {index + 1}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <strong>{"$" + money(Number(item.cost) || 0)}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </section>
 
       <section className="trip-section" aria-label="Trip별 경비 합계">
         <div className="trip-section-heading">

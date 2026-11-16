@@ -157,3 +157,33 @@ button {
   .car-records .trip-manage-row { align-items:stretch; flex-direction:column; }
   .car-records .trip-manage-actions button { flex:1; }
 }
+
+/* Annual category totals: independent of month and Trip views. */
+.car-records .category-section { border:1px solid #bfdbfe; border-radius:12px; padding:14px; background:#eff6ff; }
+.car-records .category-heading { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:end; gap:12px; margin-bottom:8px; }
+.car-records .category-heading h3 { margin:0; }
+.car-records .category-year-picker { width:144px; max-width:100%; }
+.car-records .category-year-picker label { margin:0 0 4px; font-size:13px; }
+.car-records .category-year-picker select { padding:8px 10px; }
+.car-records .category-annual-total { margin:5px 0 13px; font-size:16px; }
+.car-records .category-annual-total strong { font-size:19px; }
+.car-records .category-annual-total span { color:#475569; font-size:13px; }
+.car-records .category-group + .category-group { margin-top:7px; }
+.car-records .category-toggle { width:100%; display:flex; justify-content:space-between; align-items:center; gap:10px; text-align:left; background:#fff; }
+.car-records .category-toggle .category-name { min-width:0; }
+.car-records .category-toggle small { color:#64748b; font-weight:400; white-space:nowrap; }
+.car-records .category-toggle strong { text-align:right; white-space:nowrap; }
+.car-records .category-toggle strong span { font-size:11px; margin-left:3px; }
+.car-records .category-details { padding:6px 4px; }
+.car-records .category-details > p { padding:8px; }
+.car-records .category-detail-row { display:flex; justify-content:space-between; align-items:start; gap:14px; padding:10px 4px; font-size:14px; border-bottom:1px solid #cbd5e1; }
+.car-records .category-detail-row:last-child { border-bottom:0; }
+.car-records .category-detail-description { min-width:0; overflow-wrap:anywhere; }
+.car-records .category-detail-row > strong { white-space:nowrap; }
+.car-records .category-receipts { display:flex; flex-wrap:wrap; gap:9px; margin-top:5px; }
+.car-records .category-receipts a { color:#1d4ed8; text-decoration:underline; }
+@media (max-width:520px) {
+  .car-records .category-heading { align-items:end; }
+  .car-records .category-year-picker { width:125px; }
+  .car-records .category-toggle { padding:11px 9px; }
+}
